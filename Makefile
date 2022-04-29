@@ -4,7 +4,7 @@ CC = gcc
 CFLAGS = -std=gnu17 -Wall -Wextra -g
 
 BINARY_NAME := router
-SRCS := utils.c ip_utils.c vector.c main.c
+SRCS := utils.c ip_utils.c vector.c adjacent_networks.c neighbours.c main.c
 OBJS := $(SRCS:%.c=%.o)
 
 $(BINARY_NAME): $(OBJS)
