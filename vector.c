@@ -78,9 +78,7 @@ void handle_unreachable_vector_cells(Vector* vector) {
     for (size_t index = 0; index < vector->length; index++) {
         VectorCell* cell = &vector->cells[index];
 
-        // if (cell->connection_type == CONNECTED_VIA) {
         if (cell->distance == INFINITY_DISTANCE) {
-            // println("%u", cell->unreachable_turns);
             cell->unreachable_turns++;
             if (cell->unreachable_turns == TIMEOUTED_TURNS_TO_REMOVAL) {
                 remove_cell(vector, cell);
@@ -91,7 +89,6 @@ void handle_unreachable_vector_cells(Vector* vector) {
                 cell->unreachable_turns = 0;
             }
         }
-        // }
     }
 }
 

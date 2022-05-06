@@ -53,7 +53,6 @@ static inline void send_vector(const int socket_fd, Vector* vector, AdjacentNetw
 
         if (!handled) {
             if (result != (ssize_t)sizeof(datagram)) {
-
                 for (size_t index = 0; index < vector->length; index++) {
                     VectorCell* cell = &vector->cells[index];
                     if (cell->network_address == network_address
@@ -69,10 +68,7 @@ static inline void send_vector(const int socket_fd, Vector* vector, AdjacentNetw
                     create_cell_from_network(network, &cell);
                     add_cell(vector, &cell);
                 } else {
-                    // if (found_cell->connection_type == CONNECTED_VIA
-                    //     && found_cell->distance > network->distance) {
                     create_cell_from_network(network, found_cell);
-                    // }
                 }
             }
             handled = true;
@@ -90,7 +86,6 @@ static inline void send_vector_to_networks(
 }
 
 static inline void update_vector_cell(VectorCell* vector_cell, VectorCell* received_cell) {
-    // println("%u", received_cell->distance);
     if (received_cell->distance > MAXIMUM_DISTANCE) {
         received_cell->distance = INFINITY_DISTANCE;
     }
@@ -172,7 +167,6 @@ static inline void handle_timed_out_networks(Vector* vector, Neighbours* neighbo
         } else {
             neighbour->unreached_turns++;
             if (neighbour->timeouted && neighbour->unreached_turns == TIMEOUTED_TURNS_TO_REMOVAL) {
-                // remove_timeouted_cells_by_sender(vector, neighbour->address);
                 remove_neighbour(neighbours, neighbour);
                 index--;
             } else if (!neighbour->timeouted
