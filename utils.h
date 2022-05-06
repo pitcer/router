@@ -10,7 +10,7 @@
 
 #define eprintln(format, ...) fprintf(stderr, format "\n" __VA_OPT__(, ) __VA_ARGS__)
 
-#define DEBUG
+// #define DEBUG
 #ifdef DEBUG
 #define debug(...) println(__VA_ARGS__)
 #else

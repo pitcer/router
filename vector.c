@@ -16,15 +16,19 @@ void create_from_adjacent_networks(const AdjacentNetworks* networks, Vector* vec
     vector->cells = malloc(vector->length * sizeof(VectorCell));
 
     for (size_t index = 0; index < networks->length; index++) {
-        const AdjacentNetwork network = networks->networks[index];
+        const AdjacentNetwork* network = &networks->networks[index];
         VectorCell* cell = &vector->cells[index];
-        cell->network_address = get_network_address(network.interface_address, network.mask_length);
-        cell->mask_length = network.mask_length;
-        cell->distance = network.distance;
-        cell->connection_type = CONNECTED_DIRECTLY;
-        cell->indirect_address = 0;
-        cell->disabled = false;
+        create_cell_from_network(network, cell);
     }
+}
+
+void create_cell_from_network(const AdjacentNetwork* network, VectorCell* cell) {
+    cell->network_address = get_network_address(network->interface_address, network->mask_length);
+    cell->mask_length = network->mask_length;
+    cell->distance = network->distance;
+    cell->connection_type = CONNECTED_DIRECTLY;
+    cell->indirect_address = 0;
+    cell->unreachable_turns = 0;
 }
 
 VectorCell* find_cell(Vector* vector, const uint32_t network_address) {
@@ -52,7 +56,6 @@ void remove_cell(Vector* vector, VectorCell* cell) {
 }
 
 void set_cells_unreachable_by_sender(Vector* vector, const uint32_t sender) {
-
     for (size_t index = 0; index < vector->length; index++) {
         VectorCell* cell = &vector->cells[index];
         if (cell->connection_type == CONNECTED_VIA && cell->indirect_address == sender) {
@@ -62,7 +65,6 @@ void set_cells_unreachable_by_sender(Vector* vector, const uint32_t sender) {
 }
 
 void remove_timeouted_cells_by_sender(Vector* vector, const uint32_t sender) {
-
     for (size_t index = 0; index < vector->length; index++) {
         VectorCell* cell = &vector->cells[index];
         if (cell->connection_type == CONNECTED_VIA && cell->indirect_address == sender) {
@@ -72,8 +74,28 @@ void remove_timeouted_cells_by_sender(Vector* vector, const uint32_t sender) {
     }
 }
 
-void set_cells_unreachable(
-    Vector* vector, const uint32_t network_address, const uint32_t mask_length) {
+void handle_unreachable_vector_cells(Vector* vector) {
+    for (size_t index = 0; index < vector->length; index++) {
+        VectorCell* cell = &vector->cells[index];
+
+        // if (cell->connection_type == CONNECTED_VIA) {
+        if (cell->distance == INFINITY_DISTANCE) {
+            // println("%u", cell->unreachable_turns);
+            cell->unreachable_turns++;
+            if (cell->unreachable_turns == TIMEOUTED_TURNS_TO_REMOVAL) {
+                remove_cell(vector, cell);
+                index--;
+            }
+        } else {
+            if (cell->unreachable_turns > 0) {
+                cell->unreachable_turns = 0;
+            }
+        }
+        // }
+    }
+}
+
+void set_cells_unreachable(Vector* vector, const uint32_t network_address) {
 
     for (size_t index = 0; index < vector->length; index++) {
         VectorCell* cell = &vector->cells[index];
@@ -83,24 +105,11 @@ void set_cells_unreachable(
     }
 }
 
-void set_cells_enabled(
-    Vector* vector, const uint32_t network_address, const uint32_t mask_length) {
-
+void set_cells_reachable(Vector* vector, const uint32_t distance, const uint32_t network_address) {
     for (size_t index = 0; index < vector->length; index++) {
         VectorCell* cell = &vector->cells[index];
         if (cell->network_address == network_address) {
-            cell->disabled = false;
-        }
-    }
-}
-
-void set_cells_disabled(
-    Vector* vector, const uint32_t network_address, const uint32_t mask_length) {
-
-    for (size_t index = 0; index < vector->length; index++) {
-        VectorCell* cell = &vector->cells[index];
-        if (cell->network_address == network_address) {
-            cell->disabled = true;
+            cell->distance = distance;
         }
     }
 }
@@ -155,4 +164,5 @@ void unwrap_vector_cell_datagram(
     cell->distance = ntohl(datagram->distance);
     cell->connection_type = CONNECTED_VIA;
     cell->indirect_address = ntohl(sender->sin_addr.s_addr);
+    cell->unreachable_turns = 0;
 }

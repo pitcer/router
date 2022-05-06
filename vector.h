@@ -18,11 +18,10 @@ typedef struct {
     uint32_t network_address;
     uint32_t distance;
     uint32_t indirect_address;
-    // We can use bit fields here, but because of padding, we can introduce up to 3 additional
-    // bytes.
     uint8_t mask_length;
     uint8_t connection_type;
-    bool disabled;
+    // For how many turns that cell has distance set to infinity
+    uint8_t unreachable_turns;
 } VectorCell;
 
 typedef struct {
@@ -30,25 +29,25 @@ typedef struct {
     size_t length;
 } Vector;
 
-
-void set_cells_enabled(
-    Vector* vector, const uint32_t network_address, const uint32_t mask_length);
-
-void set_cells_disabled(
-    Vector* vector, const uint32_t network_address, const uint32_t mask_length);
-
 void create_from_adjacent_networks(const AdjacentNetworks* networks, Vector* vector);
+
+void create_cell_from_network(const AdjacentNetwork* network, VectorCell* cell);
 
 VectorCell* find_cell(Vector* vector, const uint32_t network_address);
 
 void add_cell(Vector* vector, VectorCell* cell);
 
+void remove_cell(Vector* vector, VectorCell* cell);
+
 void set_cells_unreachable_by_sender(Vector* vector, const uint32_t sender);
 
 void remove_timeouted_cells_by_sender(Vector* vector, const uint32_t sender);
 
-void set_cells_unreachable(
-    Vector* vector, const uint32_t network_address, const uint32_t mask_length);
+void handle_unreachable_vector_cells(Vector* vector);
+
+void set_cells_unreachable(Vector* vector, const uint32_t network_address);
+
+void set_cells_reachable(Vector* vector, const uint32_t distance, const uint32_t network_address);
 
 void print_vector_cell(const VectorCell* cell);
 

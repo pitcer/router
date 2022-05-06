@@ -47,22 +47,4 @@ AdjacentNetwork* get_network(AdjacentNetworks* networks, const uint32_t address)
     return NULL;
 }
 
-bool update_unreached_turns(AdjacentNetwork* network) {
-    bool reached = network->reached_in_turn;
-    network->reached_in_turn = false;
-
-    if (reached) {
-        network->unreached_turns = 0;
-        return true;
-    }
-
-    network->unreached_turns++;
-    if (network->unreached_turns == UNREACHED_TURNS_TO_TIMEOUT) {
-        network->unreached_turns = 0;
-        return false;
-    }
-
-    return true;
-}
-
 void deallocate_adjacent_networks(AdjacentNetworks* networks) { free(networks->networks); }

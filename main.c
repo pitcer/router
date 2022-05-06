@@ -34,7 +34,6 @@ static inline void parse_input_adjacent_networks(AdjacentNetworks* networks) {
         network->interface_address = *((uint32_t*)address_bytes);
         network->unreached_turns = 0;
         network->reached_in_turn = false;
-        network->timed_out = false;
     }
 }
 
@@ -42,21 +41,41 @@ static inline void send_vector(const int socket_fd, Vector* vector, AdjacentNetw
 
     struct sockaddr_in receiver;
     get_adjacent_network_broadcast_socket_address(network, &receiver);
+    bool handled = false;
 
     for (size_t index = 0; index < vector->length; index++) {
         const VectorCell* cell = &vector->cells[index];
-        if (cell->disabled) {
-            continue;
-        }
+
         VectorCellDatagram datagram;
         wrap_vector_cell_datagram(cell, &datagram);
+        const uint32_t network_address = get_adjacent_network_network_address(network);
         const ssize_t result = try_send_to(socket_fd, &datagram, sizeof(datagram), &receiver);
-        if (result != (ssize_t)sizeof(datagram)) {
-            debug("send to failed");
-            const uint32_t network_address = get_adjacent_network_network_address(network);
-            network->timed_out = true;
-            network->unreached_turns = 0;
-            set_cells_unreachable(vector, network_address, network->mask_length);
+
+        if (!handled) {
+            if (result != (ssize_t)sizeof(datagram)) {
+
+                for (size_t index = 0; index < vector->length; index++) {
+                    VectorCell* cell = &vector->cells[index];
+                    if (cell->network_address == network_address
+                        && cell->connection_type == CONNECTED_DIRECTLY) {
+                        cell->distance = INFINITY_DISTANCE;
+                    }
+                }
+            } else {
+                set_cells_reachable(vector, network->distance, network_address);
+                VectorCell* found_cell = find_cell(vector, network_address);
+                if (found_cell == NULL) {
+                    VectorCell cell;
+                    create_cell_from_network(network, &cell);
+                    add_cell(vector, &cell);
+                } else {
+                    // if (found_cell->connection_type == CONNECTED_VIA
+                    //     && found_cell->distance > network->distance) {
+                    create_cell_from_network(network, found_cell);
+                    // }
+                }
+            }
+            handled = true;
         }
     }
 }
@@ -70,11 +89,28 @@ static inline void send_vector_to_networks(
     }
 }
 
-static inline void update_vector_cell(VectorCell* vector_cell, const VectorCell* received_cell) {
+static inline void update_vector_cell(VectorCell* vector_cell, VectorCell* received_cell) {
+    // println("%u", received_cell->distance);
+    if (received_cell->distance > MAXIMUM_DISTANCE) {
+        received_cell->distance = INFINITY_DISTANCE;
+    }
+
+    if (vector_cell->distance == INFINITY_DISTANCE
+        && received_cell->distance == INFINITY_DISTANCE) {
+        return;
+    }
+
+    if (vector_cell->connection_type == CONNECTED_DIRECTLY
+        && vector_cell->distance == INFINITY_DISTANCE) {
+        return;
+    }
+
     if (vector_cell->distance > received_cell->distance
-        || (received_cell->connection_type == CONNECTED_VIA
-            && received_cell->indirect_address == vector_cell->indirect_address
-            && received_cell->distance == INFINITY_DISTANCE)) {
+        || // If we travel through a router, then it has better knowledge about the distance, even
+           // if it is larger than that in current vector.
+        (received_cell->connection_type == CONNECTED_VIA
+            && received_cell->indirect_address == vector_cell->indirect_address)) {
+        received_cell->unreachable_turns = vector_cell->unreachable_turns;
         *vector_cell = *received_cell;
     }
 }
@@ -93,7 +129,6 @@ static inline void receive_vector_from_networks(
     VectorCell received_cell;
     unwrap_vector_cell_datagram(datagram, &sender, &received_cell);
 
-
     AdjacentNetwork* adjacent_network
         = find_adjacent_network(networks, received_cell.indirect_address);
     if (adjacent_network != NULL) {
@@ -110,24 +145,22 @@ static inline void receive_vector_from_networks(
         debug("packet from unknown sender");
         return;
     }
-    const uint32_t network_address = get_adjacent_network_network_address(network);
-    set_cells_enabled(vector, network_address, network->mask_length);
-    network->reached_in_turn = true;
-    received_cell.distance += network->distance;
 
-    // println("vec:");
-    // print_vector_cell(&received_cell);
+    if (received_cell.distance != INFINITY_DISTANCE) {
+        received_cell.distance += network->distance;
+    }
 
     VectorCell* vector_cell = find_cell(vector, received_cell.network_address);
     if (vector_cell == NULL) {
-        add_cell(vector, &received_cell);
+        if (received_cell.distance != INFINITY_DISTANCE) {
+            add_cell(vector, &received_cell);
+        }
     } else {
         update_vector_cell(vector_cell, &received_cell);
     }
 }
 
-static inline void handle_timed_out_networks(
-    Vector* vector, AdjacentNetworks* networks, Neighbours* neighbours) {
+static inline void handle_timed_out_networks(Vector* vector, Neighbours* neighbours) {
 
     for (size_t index = 0; index < neighbours->length; index++) {
         Neighbour* neighbour = &neighbours->neighbours[index];
@@ -139,7 +172,7 @@ static inline void handle_timed_out_networks(
         } else {
             neighbour->unreached_turns++;
             if (neighbour->timeouted && neighbour->unreached_turns == TIMEOUTED_TURNS_TO_REMOVAL) {
-                remove_timeouted_cells_by_sender(vector, neighbour->address);
+                // remove_timeouted_cells_by_sender(vector, neighbour->address);
                 remove_neighbour(neighbours, neighbour);
                 index--;
             } else if (!neighbour->timeouted
@@ -150,37 +183,6 @@ static inline void handle_timed_out_networks(
                 set_cells_unreachable_by_sender(vector, neighbour->address);
             }
         }
-    }
-
-    for (size_t index = 0; index < networks->length; index++) {
-        AdjacentNetwork* network = &networks->networks[index];
-
-        if (network->reached_in_turn) {
-            network->reached_in_turn = false;
-            network->timed_out = false;
-            network->unreached_turns = 0;
-        } else {
-            network->unreached_turns++;
-            if (network->timed_out && network->unreached_turns == TIMEOUTED_TURNS_TO_REMOVAL) {
-                remove_timeouted_cells_by_sender(vector, network->interface_address);
-                // remove_network(networks, network);
-                const uint32_t network_address = get_adjacent_network_network_address(network);
-                set_cells_disabled(vector, network_address, network->mask_length);
-                index--;
-            } else if (!network->timed_out
-                && network->unreached_turns == UNREACHED_TURNS_TO_TIMEOUT) {
-
-                network->unreached_turns = 0;
-                network->timed_out = true;
-                const uint32_t network_address = get_adjacent_network_network_address(network);
-                set_cells_unreachable(vector, network_address, network->mask_length);
-            }
-        }
-        // bool result = update_unreached_turns(network);
-        // if (!result) {
-        //     const uint32_t network_address = get_adjacent_network_network_address(network);
-        //     set_cells_unreachable(vector, network_address, network->mask_length);
-        // }
     }
 }
 
@@ -200,8 +202,9 @@ static inline void receive_or_send_distance_vector(
             eprintln("select error: %s", strerror(errno));
             exit(EXIT_FAILURE);
         } else if (ready == 0) {
-            handle_timed_out_networks(vector, networks, neighbours);
             send_vector_to_networks(socket_fd, vector, networks);
+            handle_unreachable_vector_cells(vector);
+            handle_timed_out_networks(vector, neighbours);
 
             print_vector(vector);
 
@@ -219,7 +222,7 @@ int main(void) {
 
     Vector vector;
     create_from_adjacent_networks(&networks, &vector);
-    print_vector(&vector); // TODO: remove
+    print_vector(&vector);
 
     Neighbours neighbours;
     initialize_neighbours(&neighbours);
