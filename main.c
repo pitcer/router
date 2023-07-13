@@ -196,9 +196,9 @@ static inline void receive_or_send_distance_vector(
             eprintln("select error: %s", strerror(errno));
             exit(EXIT_FAILURE);
         } else if (ready == 0) {
-            send_vector_to_networks(socket_fd, vector, networks);
             handle_unreachable_vector_cells(vector);
             handle_timed_out_networks(vector, neighbours);
+            send_vector_to_networks(socket_fd, vector, networks);
 
             print_vector(vector);
 
